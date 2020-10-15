@@ -18,7 +18,9 @@ public class UI_Behavior : MonoBehaviour
     private static Vector2[] s_MovementDirections = new[] { Vector2.up, Vector2.left, Vector2.right };
     private static KeyCode[] s_MovementKeys = new[] { UP_KEY, LEFT_KEY, RIGHT_KEY };
 
-    private static float[] s_ForceMagnitudeScalar = new[] { 1000.0f, 0.7f, 0.7f };
+    private static float[] ORG_FORCE_MAGNITUDE_SCALAR = new[] { 1.0f, 0.7f, 0.7f };
+
+    private static float[] s_ForceMagnitudeScalar = new[] { 1.0f, 0.7f, 0.7f };
     private static float[] s_PrevTime = new[] { 0.0f, 0.0f, 0.0f };
 
     private static GameObject s_ReelingSliderObject;
@@ -54,13 +56,9 @@ public class UI_Behavior : MonoBehaviour
     
     public static float s_SliderMaxValue = 0.0f;
 
-    private const float EXPECTED_WIDTH = 800.0f;
-    private static float s_ForceResolutionScalar = 0.0f;
-
     // Start is called before the first frame update
     void Start()
     {
-        s_ForceResolutionScalar = Screen.currentResolution.width / EXPECTED_WIDTH;
         s_FishingPopUpPanel = gameObject.transform.parent.gameObject;
         s_ReelingSliderObject = s_FishingPopUpPanel.transform.parent.gameObject.transform.GetChild(1).gameObject;
         s_ProgressSlider = s_FishingPopUpPanel.transform.parent.gameObject.transform.GetChild(2).gameObject.GetComponent<Slider>();
@@ -113,7 +111,7 @@ public class UI_Behavior : MonoBehaviour
             s_PlayerRigidbody2D.gravityScale = 0.0f;
         } else {
             s_Instance.m_FishOnLineSound.PlayOneShot(s_Instance.m_FishOnLineSound.clip);
-            s_PlayerRigidbody2D.gravityScale = 6.0f * s_ForceResolutionScalar;
+            s_PlayerRigidbody2D.gravityScale = 12.0f;
             s_ReelingSlider.maxValue = s_SliderMaxValue;
             s_ReelingSlider.value = s_ReelingSlider.maxValue / 4.0f;
             s_HollowCubeObject.transform.position = s_InitialHollowCubePosition;
@@ -126,7 +124,7 @@ public class UI_Behavior : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void FixedUpdate()
     {
         if(!s_FishingPopUpPanel.activeInHierarchy) {
             return;
@@ -146,23 +144,32 @@ public class UI_Behavior : MonoBehaviour
             UpdateMovementSpeed(s_MovementKeys[x], x);
         }
 
-        s_PlayerRigidbody2D.AddForce(s_MovementForce * s_ForceResolutionScalar, ForceMode2D.Impulse);
+        s_PlayerRigidbody2D.AddForce(s_MovementForce, ForceMode2D.Impulse);
     }
 
     private void UpdateMovementSpeed(KeyCode key, int index)
     {
         bool isLeadingEdge = Input.GetKeyDown(key);
         bool isHolding = Input.GetKey(key);
-        bool shouldAccelerate = Time.time - s_PrevTime[index] >= (ACCELERATION_INTERVAL) && isHolding && s_ForceMagnitudeScalar[index] <= 1.9f;
+        bool shouldAccelerate = Time.time - s_PrevTime[index] >= (ACCELERATION_INTERVAL) && isHolding && s_ForceMagnitudeScalar[index] <= ((index == 0)? 5.0f : 1.8f);
         if(!isHolding) {
-            s_ForceMagnitudeScalar[index] = 1.0f; return;
+            s_ForceMagnitudeScalar[index] = ORG_FORCE_MAGNITUDE_SCALAR[index]; return;
         }
          
         if (isLeadingEdge) {
             s_PrevTime[index] = Time.time;
         }
         else if (shouldAccelerate) {
-            s_ForceMagnitudeScalar[index] += ACCELERATION_INTERVAL;
+
+            if (index == 0)
+            {
+                s_ForceMagnitudeScalar[index] += ACCELERATION_INTERVAL * 5.0f;
+            }
+            else
+            {
+                s_ForceMagnitudeScalar[index] += ACCELERATION_INTERVAL;
+            }
+            //s_PrevTime[index] = Time.time;
         }
 
         s_MovementForce += s_MovementDirections[index] * s_ForceMagnitudeScalar[index];
@@ -172,7 +179,7 @@ public class UI_Behavior : MonoBehaviour
     {
         if(!s_HollowCubeDestinationPosition.HasValue)
         {
-            s_TimerToMoveCube -= Time.deltaTime;
+            s_TimerToMoveCube -= Time.fixedDeltaTime;
 
             if(s_TimerToMoveCube <= 0.0f)
             {
@@ -184,7 +191,7 @@ public class UI_Behavior : MonoBehaviour
 
         } else
         {
-            s_CubeMovementTimer += Time.deltaTime;
+            s_CubeMovementTimer += Time.fixedDeltaTime;
             s_HollowCubeObject.transform.position = Vector3.Lerp(s_HollowCubeStartPosition, s_HollowCubeDestinationPosition.Value, s_CubeMovementTimer / s_TimeCubeMovementShouldTake);
             
             if((s_HollowCubeObject.transform.position - s_HollowCubeDestinationPosition.Value).magnitude <= 0.01f) 
@@ -200,24 +207,25 @@ public class UI_Behavior : MonoBehaviour
 
         if (s_ShouldIncrementSliderValue)
         {
-            s_ReelingSlider.value += Time.deltaTime / 3.0f;
+            s_ReelingSlider.value += Time.fixedDeltaTime / 3.0f;
         }
         else
         {
-            s_ReelingSlider.value -= Time.deltaTime / 3.5f;
+            s_ReelingSlider.value -= Time.fixedDeltaTime / 5.0f;
         }
 
 
-        if (s_ReelingSlider.value >= s_ReelingSlider.maxValue)
-        {
+        if (s_ReelingSlider.value >= s_ReelingSlider.maxValue) {
+
             m_FishCaughtSound.PlayOneShot(m_FishCaughtSound.clip);
             DisplayUI(false);
             MovementBehavior.s_IsReeling = false;
             Destroy(MovementBehavior.s_ReeledFish);
             MovementBehavior.s_ReeledFish = null;
             s_ProgressSlider.value += 2.0f;
-        } else if(s_ReelingSlider.value <= s_ReelingSlider.minValue)
-        {
+        
+        } else if(s_ReelingSlider.value <= s_ReelingSlider.minValue) {
+
             m_FishLostSound.PlayOneShot(m_FishLostSound.clip);
             DisplayUI(false);
             MovementBehavior.s_IsReeling = false;
@@ -228,16 +236,14 @@ public class UI_Behavior : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        if(collision.CompareTag("Player"))
-        {
+        if(collision.CompareTag("Player")) {
             s_ShouldIncrementSliderValue = true;
         }
     }
 
     private void OnTriggerExit2D(Collider2D collision)
     {
-        if(collision.CompareTag("Player"))
-        {
+        if(collision.CompareTag("Player")) {
             s_ShouldIncrementSliderValue = false;
         }
     }
