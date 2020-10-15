@@ -5,23 +5,51 @@ using UnityEngine.UI;
 
 public class UI_Behavior : MonoBehaviour
 {
+
     private const float ACCELERATION_INTERVAL = 0.05f;
     private const float MIN_CUBE_MOVEMENT_TIME = 0.50f;
     private const float MAX_CUBE_MOVEMENT_TIME = 1.0f;
     private const float MIN_TIME_TO_MOVE_CUBE_AGAIN = 1.5f;
     private const float MAX_TIME_TO_MOVE_CUBE_AGAIN = 4.5f;
+    private const float GRAVITY_SCALE = 12.0f;
 
     private const KeyCode UP_KEY = KeyCode.W;
     private const KeyCode RIGHT_KEY = KeyCode.D;
     private const KeyCode LEFT_KEY = KeyCode.A;
 
-    private static Vector2[] s_MovementDirections = new[] { Vector2.up, Vector2.left, Vector2.right };
-    private static KeyCode[] s_MovementKeys = new[] { UP_KEY, LEFT_KEY, RIGHT_KEY };
+    private struct MovementInformation
+    {
+        private Vector2 movementDirection;
+        private KeyCode movementKey;
+        public float forceMagnitude;
+        public float lastTime;
+
+        public KeyCode GetMovementKey()
+        {
+            return movementKey;
+        }
+
+        public Vector2 GetMovementDirection()
+        {
+            return movementDirection;
+        }
+
+        public MovementInformation(Vector2 direction, KeyCode key, float magnitude, float time)
+        {
+            movementDirection = direction;
+            movementKey = key;
+            forceMagnitude = magnitude;
+            lastTime = time;
+        }
+    };
 
     private static float[] ORG_FORCE_MAGNITUDE_SCALAR = new[] { 1.0f, 0.7f, 0.7f };
 
-    private static float[] s_ForceMagnitudeScalar = new[] { 1.0f, 0.7f, 0.7f };
-    private static float[] s_PrevTime = new[] { 0.0f, 0.0f, 0.0f };
+    private static MovementInformation[] s_MovementInfos = new[] {
+        new MovementInformation(Vector2.up, UP_KEY, 1.0f, 0.0f),
+        new MovementInformation(Vector2.left, LEFT_KEY, 0.7f, 0.0f),
+        new MovementInformation(Vector2.right, RIGHT_KEY, 0.7f, 0.0f)
+    };
 
     private static GameObject s_ReelingSliderObject;
     private static GameObject s_FishingPopUpPanel;
@@ -111,7 +139,7 @@ public class UI_Behavior : MonoBehaviour
             s_PlayerRigidbody2D.gravityScale = 0.0f;
         } else {
             s_Instance.m_FishOnLineSound.PlayOneShot(s_Instance.m_FishOnLineSound.clip);
-            s_PlayerRigidbody2D.gravityScale = 12.0f;
+            s_PlayerRigidbody2D.gravityScale = GRAVITY_SCALE;
             s_ReelingSlider.maxValue = s_SliderMaxValue;
             s_ReelingSlider.value = s_ReelingSlider.maxValue / 4.0f;
             s_HollowCubeObject.transform.position = s_InitialHollowCubePosition;
@@ -139,40 +167,44 @@ public class UI_Behavior : MonoBehaviour
     {
         s_MovementForce = Vector2.zero;
 
-        for (int x = 0; x < 3; x++)
-        {
-            UpdateMovementSpeed(s_MovementKeys[x], x);
+        for (int x = 0; x < s_MovementInfos.Length; x++) {
+            UpdateMovementSpeed(x);
         }
 
         s_PlayerRigidbody2D.AddForce(s_MovementForce, ForceMode2D.Impulse);
     }
 
-    private void UpdateMovementSpeed(KeyCode key, int index)
+    private void UpdateMovementSpeed(int index)
     {
-        bool isLeadingEdge = Input.GetKeyDown(key);
+        KeyCode key = s_MovementInfos[index].GetMovementKey();
+        
         bool isHolding = Input.GetKey(key);
-        bool shouldAccelerate = Time.time - s_PrevTime[index] >= (ACCELERATION_INTERVAL) && isHolding && s_ForceMagnitudeScalar[index] <= ((index == 0)? 5.0f : 1.8f);
         if(!isHolding) {
-            s_ForceMagnitudeScalar[index] = ORG_FORCE_MAGNITUDE_SCALAR[index]; return;
+            s_MovementInfos[index].forceMagnitude = ORG_FORCE_MAGNITUDE_SCALAR[index]; 
+            return;
         }
-         
+
+        bool isLeadingEdge = Input.GetKeyDown(key);
+
+        float maxForceMagnitude = (index == 0) ? 5.0f : 1.8f;
+        bool hasExpectedTimeBetweenAccelerationElapsed = (Time.time - s_MovementInfos[index].lastTime) >= ACCELERATION_INTERVAL;
+
+        bool shouldAccelerate = isHolding;
+        shouldAccelerate &= hasExpectedTimeBetweenAccelerationElapsed;
+        shouldAccelerate &= s_MovementInfos[index].forceMagnitude <= maxForceMagnitude;
+
         if (isLeadingEdge) {
-            s_PrevTime[index] = Time.time;
+            s_MovementInfos[index].lastTime = Time.time;
         }
         else if (shouldAccelerate) {
 
-            if (index == 0)
-            {
-                s_ForceMagnitudeScalar[index] += ACCELERATION_INTERVAL * 5.0f;
-            }
-            else
-            {
-                s_ForceMagnitudeScalar[index] += ACCELERATION_INTERVAL;
-            }
-            //s_PrevTime[index] = Time.time;
+            s_MovementInfos[index].forceMagnitude += ACCELERATION_INTERVAL * maxForceMagnitude;
+            s_MovementInfos[index].lastTime = Time.time;
         }
 
-        s_MovementForce += s_MovementDirections[index] * s_ForceMagnitudeScalar[index];
+        Vector2 movementDirection = s_MovementInfos[index].GetMovementDirection();
+
+        s_MovementForce += movementDirection * s_MovementInfos[index].forceMagnitude;
     }
 
     private void UpdateHollowCube()
